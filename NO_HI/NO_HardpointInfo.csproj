@@ -14,6 +14,11 @@
         <Authors>Appulcake</Authors>
         <PackageTags>nuclear;option;bepinex</PackageTags>
 
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageProjectUrl>https://github.com/Appulcake/NO_HardpointInfo</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/Appulcake/NO_HardpointInfo</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
