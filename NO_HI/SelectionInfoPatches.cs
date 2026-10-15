@@ -7,12 +7,37 @@ namespace NO_HI;
 [HarmonyPatch]
 internal static class SelectionInfoPatches
 {
+    private static void RefreshMenu(AircraftSelectionMenu menu)
+    {
+        if (menu == null)
+            return;
+        
+        var ui = menu.GetComponent<SelectionInfoBehaviour>();
+        if (ui != null)
+            ui.Refresh();
+    }
+    
+    private static void RefreshSelector(WeaponSelector selector)
+    {
+        if (selector == null)
+            return;
+        
+        var ui = selector.GetComponentInParent<SelectionInfoBehaviour>();
+        if (ui != null)
+            ui.Refresh();
+    }
+    
     [HarmonyPatch(typeof(AircraftSelectionMenu), nameof(AircraftSelectionMenu.Initialize))]
     [HarmonyPostfix]
     private static void InitializePostfix(AircraftSelectionMenu __instance)
     {
-        var ui = __instance.GetComponent<SelectionInfoBehaviour>() ??
-                 __instance.gameObject.AddComponent<SelectionInfoBehaviour>();
+        if (__instance == null)
+            return;
+        
+        var ui = __instance.GetComponent<SelectionInfoBehaviour>();
+        if (ui == null)
+            ui = __instance.gameObject.AddComponent<SelectionInfoBehaviour>();
+        
         ui.Initialise(__instance);
     }
     
@@ -20,27 +45,27 @@ internal static class SelectionInfoPatches
     [HarmonyPostfix]
     private static void SpawnPreviewPostfix(AircraftSelectionMenu __instance)
     {
-        __instance.GetComponent<SelectionInfoBehaviour>()?.Refresh();
+        RefreshMenu(__instance);
     }
     
     [HarmonyPatch(typeof(AircraftSelectionMenu), nameof(AircraftSelectionMenu.UpdateReadouts))]
     [HarmonyPostfix]
     private static void UpdateReadoutsPostfix(AircraftSelectionMenu __instance)
     {
-        __instance.GetComponent<SelectionInfoBehaviour>()?.Refresh();
+        RefreshMenu(__instance);
     }
     
     [HarmonyPatch(typeof(WeaponSelector), nameof(WeaponSelector.SplitSymmetry))]
     [HarmonyPostfix]
     private static void SplitSymmetryPostfix(WeaponSelector __instance)
     {
-        __instance.GetComponentInParent<SelectionInfoBehaviour>()?.Refresh();
+        RefreshSelector(__instance);
     }
     
     [HarmonyPatch(typeof(WeaponSelector), nameof(WeaponSelector.UpdateSymmetry))]
     [HarmonyPostfix]
     private static void UpdateSymmetryPostfix(WeaponSelector __instance)
     {
-        __instance.GetComponentInParent<SelectionInfoBehaviour>()?.Refresh();
+        RefreshSelector(__instance);
     }
 }

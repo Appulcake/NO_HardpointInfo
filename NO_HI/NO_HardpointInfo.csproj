@@ -10,7 +10,7 @@
         <PackageId>Apul.NO_HardpointInfo</PackageId>
         <Title>NO_HardpointInfo</Title>
         <Description>A mod to add more (configurable) hardpoint info in loadout menu to Nuclear Option.</Description>
-        <Version>0.34.2.1</Version>
+        <Version>0.34.2.2</Version>
         <Authors>Appulcake</Authors>
         <PackageTags>nuclear;option;bepinex</PackageTags>
 
