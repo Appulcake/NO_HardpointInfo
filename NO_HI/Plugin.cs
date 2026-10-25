@@ -24,7 +24,6 @@ public class Plugin : BaseUnityPlugin
     internal static ConfigEntry<bool> ShowLaseRanges = null!;
     private Harmony? _harmony;
     
-    
     private new static ManualLogSource Logger { get; set; } = null!;
     
     private void Awake()
@@ -55,10 +54,11 @@ public class Plugin : BaseUnityPlugin
         ShowEmptyCost = Config.Bind(HardpointSection, "4. Empty Cost", false,
             "Show mount's empty cost");
         ShowLaseTargets = Config.Bind(HardpointSection, "5a. Lase Targets", true,
-            "Show the plane's total laser designation targets (shows in panels above laser guided " +
-            "weapons and Aryx Weaponry Pack targeting pods).");
+            "Show the plane's total laser designation target count above laser guided weapons, or " +
+            "a laser designator's added count above an Aryx Weaponry Pack targeting pod.");
         ShowLaseRanges = Config.Bind(HardpointSection, "5b. Lase Ranges", true,
-            "Show laser designator max ranges.");
+            "Show all laser designators' max ranges above laser guided weapons, or the range of an " +
+            "Aryx Weaponry Pack targeting pod.");
         
         _harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
         _harmony.PatchAll();

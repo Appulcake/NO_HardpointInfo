@@ -12,7 +12,7 @@ internal static class LaserTargetInfo
     // Preview plane doesn't always seem to apply IHardpointAddon properties, so need to actually look into/inspect
     // weapon pack targeting pod properties on hardpoints to check their values, and update it on hardpoint changes
     internal static Snapshot GetSnapshot(Aircraft? aircraft, IReadOnlyList<WeaponSelector> selectors,
-        Dictionary<WeaponMount, int> podMountCache)
+        Dictionary<WeaponMount, PodContribution> podMountCache)
     {
         if (aircraft == null)
             return Snapshot.Empty;
@@ -66,31 +66,28 @@ internal static class LaserTargetInfo
             if (mount == null)
                 continue;
             
-            if (!podMountCache.TryGetValue(mount, out var perHardpoint))
-            {
-                perHardpoint = GetPodTargetsPerHardpoint(mount);
-                podMountCache[mount] = perHardpoint;
-            }
-            
-            podTargets += perHardpoint * hardpointCount;
+            var pod = GetPodContribution(mount, podMountCache);
+            podTargets += pod.TargetsPerHardpoint * hardpointCount;
         }
         
+        // Check a targeting pod's range stat so it can be showed independently on its own hardpoint
+        // (fallback value is 10km if it can't be determined/plane doesn't have a base targeting pod to inherit)
+        var podRange = GetPodRange(aircraft, byRange);
         if (podTargets > 0)
         {
-            var podRange = GetPodRange(aircraft, byRange);
             byRange.TryGetValue(podRange, out var previous);
             byRange[podRange] = previous + podTargets;
             total += podTargets;
         }
         
         if (total == 0)
-            return Snapshot.Empty;
+            return new Snapshot(0, [], podRange);
         
         var ranges = new List<RangeBracket>(byRange.Count);
         foreach (var bracket in byRange)
             ranges.Add(new RangeBracket(bracket.Key, bracket.Value));
         ranges.Sort((a, b) => b.RangeMeters.CompareTo(a.RangeMeters));
-        return new Snapshot(total, ranges);
+        return new Snapshot(total, ranges, podRange);
     }
     
     private static int GetPodRange(Aircraft aircraft, Dictionary<int, int> nativeRanges)
@@ -102,27 +99,33 @@ internal static class LaserTargetInfo
         var fallback = 0;
         foreach (var meters in nativeRanges.Keys)
             fallback = Mathf.Max(fallback, meters);
-        return fallback > 0 ? fallback : 10000; // Vanilla laser designator range is 10km when not explicitly changed
+        return fallback > 0 ? fallback : 10000;
     }
     
-    private static int GetPodTargetsPerHardpoint(WeaponMount mount)
+    internal static PodContribution GetPodContribution(WeaponMount mount,
+        Dictionary<WeaponMount, PodContribution> cache)
     {
-        if (mount.prefab == null)
-            return 0;
+        if (cache.TryGetValue(mount, out var cached))
+            return cached;
         
         var count = 0;
-        foreach (var weapon in mount.prefab.GetComponentsInChildren<Weapon>(true))
-        {
-            if (weapon == null || weapon.GetType().FullName != AryxTargetingPodType)
-                continue;
-            
-            var field = weapon.GetType().GetField("addedLaserTargets",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (field?.GetValue(weapon) is int added)
-                count += Mathf.Max(0, added);
-        }
+        var isPod = false;
+        if (mount.prefab != null)
+            foreach (var weapon in mount.prefab.GetComponentsInChildren<Weapon>(true))
+            {
+                if (weapon == null || weapon.GetType().FullName != AryxTargetingPodType)
+                    continue;
+                
+                isPod = true;
+                var field = weapon.GetType().GetField("addedLaserTargets",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (field?.GetValue(weapon) is int added)
+                    count += Mathf.Max(0, added);
+            }
         
-        return count;
+        var result = new PodContribution(isPod, count);
+        cache[mount] = result;
+        return result;
     }
     
     internal static bool IsRelevantMount(WeaponMount mount)
@@ -148,6 +151,18 @@ internal static class LaserTargetInfo
     private static bool HasLaserSeeker(GameObject? prefab) =>
         prefab != null && prefab.GetComponentInChildren<LaserSeeker>(true) != null;
     
+    internal readonly struct PodContribution
+    {
+        internal readonly bool IsPod;
+        internal readonly int TargetsPerHardpoint;
+        
+        internal PodContribution(bool isPod, int targetsPerHardpoint)
+        {
+            IsPod = isPod;
+            TargetsPerHardpoint = targetsPerHardpoint;
+        }
+    }
+    
     internal readonly struct RangeBracket
     {
         internal readonly int RangeMeters;
@@ -164,15 +179,16 @@ internal static class LaserTargetInfo
     
     internal sealed class Snapshot
     {
-        internal static readonly Snapshot Empty = new(0, []);
+        internal static readonly Snapshot Empty = new(0, [], 10000);
+        internal readonly int PodRangeMeters;
         internal readonly IReadOnlyList<RangeBracket> Ranges;
-        
         internal readonly int TotalTargets;
         
-        internal Snapshot(int totalTargets, IReadOnlyList<RangeBracket> ranges)
+        internal Snapshot(int totalTargets, IReadOnlyList<RangeBracket> ranges, int podRangeMeters)
         {
             TotalTargets = totalTargets;
             Ranges = ranges;
+            PodRangeMeters = podRangeMeters;
         }
     }
 }

@@ -15,10 +15,12 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
     private const float OverlayPadding = 6f;
     private const float RightPanelExtraHeight = 45f;
     private const float LabelToValueGap = 5f;
+    private const float OverlayMaxFontSize = 14f;
+    private const float OverlayMinFontSize = 9f;
     private const float CheckInterval = 0.25f;
     private readonly Dictionary<WeaponMount, bool> _laserMountCache = new();
     private readonly Dictionary<WeaponSelector, Overlay> _overlays = new();
-    private readonly Dictionary<WeaponMount, int> _podMountCache = new();
+    private readonly Dictionary<WeaponMount, LaserTargetInfo.PodContribution> _podMountCache = new();
     private readonly List<WeaponSelector> _toRemove = [];
     private float _appliedInfoHeight;
     private float _appliedRightHeight;
@@ -111,15 +113,36 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
                 continue;
             
             PositionOverlayAboveSymmetry(selector, overlay.Rect);
+            var contentChanged = false;
             if (!string.Equals(overlay.Labels.text, labels, StringComparison.Ordinal))
+            {
                 overlay.Labels.text = labels;
+                contentChanged = true;
+            }
             
             if (!string.Equals(overlay.Values.text, values, StringComparison.Ordinal))
+            {
                 overlay.Values.text = values;
+                contentChanged = true;
+            }
             
-            var preferredWidth = overlay.Values.GetPreferredValues(values).x + 2f;
-            var maxWidth = Mathf.Max(22f, overlay.Rect.rect.width * 0.6f);
-            var valueWidth = Mathf.Min(Mathf.Max(34f, preferredWidth), maxWidth);
+            var currentWidth = overlay.Rect.rect.width;
+            if (!contentChanged && Mathf.Abs(overlay.LastMeasuredWidth - currentWidth) < 0.5f)
+                continue;
+            overlay.LastMeasuredWidth = currentWidth;
+            
+            overlay.Labels.fontSize = OverlayMaxFontSize;
+            overlay.Values.fontSize = OverlayMaxFontSize;
+            var labelPreferred = overlay.Labels.GetPreferredValues(labels).x + 2f;
+            var valuePreferred = overlay.Values.GetPreferredValues(values).x + 2f;
+            var panelWidth = overlay.Rect.rect.width;
+            var availableWidth = Mathf.Max(1f, panelWidth - LabelToValueGap - 8f);
+            var valueWidth = valuePreferred;
+            if (labelPreferred + valuePreferred > availableWidth)
+                valueWidth = availableWidth * valuePreferred / (labelPreferred + valuePreferred);
+            var minValueWidth = Mathf.Min(34f, availableWidth * 0.45f);
+            var maxValueWidth = Mathf.Max(minValueWidth, panelWidth * 0.6f);
+            valueWidth = Mathf.Clamp(valueWidth, minValueWidth, maxValueWidth);
             if (Mathf.Abs(overlay.LastValueWidth - valueWidth) > 0.5f)
             {
                 overlay.LastValueWidth = valueWidth;
@@ -127,6 +150,12 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
                 overlay.Labels.rectTransform.offsetMax = new Vector2(-valueWidth - LabelToValueGap - 4f, -2f);
             }
             
+            var labelWidth = Mathf.Max(1f, panelWidth - valueWidth - LabelToValueGap - 8f);
+            var finalFont = OverlayMaxFontSize * Mathf.Min(1f,
+                Mathf.Min(labelWidth / Mathf.Max(1f, labelPreferred), valueWidth / Mathf.Max(1f, valuePreferred)));
+            finalFont = Mathf.Clamp(Mathf.Floor(finalFont * 4f) * 0.25f, OverlayMinFontSize, OverlayMaxFontSize);
+            overlay.Labels.fontSize = finalFont;
+            overlay.Values.fontSize = finalFont;
             var contentHeight = Mathf.Max(overlay.Labels.GetPreferredValues(labels).y,
                 overlay.Values.GetPreferredValues(values).y);
             var height = Mathf.Ceil(contentHeight + OverlayPadding);
@@ -222,10 +251,10 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
     {
         text.name = name;
         text.text = string.Empty;
-        text.fontSize = 14f;
-        text.fontSizeMin = 9f;
-        text.fontSizeMax = 14f;
-        text.enableAutoSizing = true;
+        text.fontSize = OverlayMaxFontSize;
+        text.fontSizeMin = OverlayMinFontSize;
+        text.fontSizeMax = OverlayMaxFontSize;
+        text.enableAutoSizing = false;
         text.enableWordWrapping = false;
         text.overflowMode = TextOverflowModes.Truncate;
         text.alignment = alignment;
@@ -261,7 +290,6 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
         if (sibling != null && !sibling.gameObject.activeSelf && sibling.hardpointSet != null &&
             sibling.hardpointSet != primary)
             physicalCount += sibling.hardpointSet.hardpoints?.Count ?? 0;
-        
         var n = mount != null ? physicalCount : 0f;
         var labelBuilder = new StringBuilder(96);
         var valueBuilder = new StringBuilder(96);
@@ -318,20 +346,34 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
                 ref count);
         }
         
-        if ((Plugin.ShowLaseTargets.Value || Plugin.ShowLaseRanges.Value) && mount != null &&
-            IsLaserRelevantMount(mount))
+        if ((Plugin.ShowLaseTargets.Value || Plugin.ShowLaseRanges.Value) && mount != null)
+        
         {
-            if (Plugin.ShowLaseTargets.Value)
-                AppendRow(labelBuilder, valueBuilder, "Lase targets", laser.TotalTargets.ToString(),
-                    laser.TotalTargets, ref count, true);
-            
-            if (Plugin.ShowLaseRanges.Value)
-                for (var i = 0; i < laser.Ranges.Count; i++)
-                {
-                    var range = laser.Ranges[i];
-                    AppendRow(labelBuilder, valueBuilder, i == 0 ? "Lase range" : "", range.Format(), range.Targets,
-                        ref count, true);
-                }
+            var pod = LaserTargetInfo.GetPodContribution(mount, _podMountCache);
+            if (pod.IsPod) // Target pods show their own info
+            {
+                var addedTargets = pod.TargetsPerHardpoint * physicalCount;
+                if (Plugin.ShowLaseTargets.Value)
+                    AppendRow(labelBuilder, valueBuilder, "Lase targets", $"+{addedTargets}", addedTargets, ref count,
+                        true);
+                if (Plugin.ShowLaseRanges.Value)
+                    AppendRow(labelBuilder, valueBuilder, "Lase range",
+                        UnitConverter.DistanceReading(laser.PodRangeMeters), laser.PodRangeMeters, ref count, true);
+            }
+            else if (IsLaserRelevantMount(mount)) // Laser guided weapons show global plane lase stat info
+            {
+                if (Plugin.ShowLaseTargets.Value)
+                    AppendRow(labelBuilder, valueBuilder, "Total lases", laser.TotalTargets.ToString(),
+                        laser.TotalTargets, ref count, true);
+                
+                if (Plugin.ShowLaseRanges.Value)
+                    for (var i = 0; i < laser.Ranges.Count; i++)
+                    {
+                        var range = laser.Ranges[i];
+                        AppendRow(labelBuilder, valueBuilder, i == 0 ? "Lase ranges" : "", range.Format(),
+                            range.Targets, ref count, true);
+                    }
+            }
         }
         
         labels = labelBuilder.ToString();
@@ -373,7 +415,6 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
         
         _emptyRcsRow!.SetActive(true);
         PositionEmptyRcsRowBelowExistingLabels();
-        
         var extraInfo = CalculateRequiredInfoExtraHeight();
         SetInfoRowExtraHeight(extraInfo);
         SetRightPanelExtraHeight(RightPanelExtraHeight);
@@ -408,7 +449,6 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
         
         _infoRect = info;
         _rightPanel = infoPanel.parent as RectTransform;
-        
         var row = Instantiate(source.gameObject, info);
         row.name = EmptyRcsRowName;
         var label = row.GetComponent<TextMeshProUGUI>();
@@ -525,6 +565,7 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
         internal readonly RectTransform Rect;
         internal readonly GameObject Root;
         internal readonly TextMeshProUGUI Values;
+        internal float LastMeasuredWidth = -1f;
         internal float LastValueWidth = -1f;
         
         internal Overlay(GameObject root, RectTransform rect, TextMeshProUGUI labels, TextMeshProUGUI values)
