@@ -20,6 +20,8 @@ public class Plugin : BaseUnityPlugin
     internal static ConfigEntry<bool> ShowRcs = null!;
     internal static ConfigEntry<bool> ShowEmptyRcs = null!;
     internal static ConfigEntry<bool> ShowAircraftEmptyRcs = null!;
+    internal static ConfigEntry<bool> ShowLaseTargets = null!;
+    internal static ConfigEntry<bool> ShowLaseRanges = null!;
     private Harmony? _harmony;
     
     
@@ -52,6 +54,11 @@ public class Plugin : BaseUnityPlugin
             "Show mount's empty drag");
         ShowEmptyCost = Config.Bind(HardpointSection, "4. Empty Cost", false,
             "Show mount's empty cost");
+        ShowLaseTargets = Config.Bind(HardpointSection, "5a. Lase Targets", true,
+            "Show the plane's total laser designation targets (shows in panels above laser guided " +
+            "weapons and Aryx Weaponry Pack targeting pods).");
+        ShowLaseRanges = Config.Bind(HardpointSection, "5b. Lase Ranges", true,
+            "Show laser designator max ranges.");
         
         _harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
         _harmony.PatchAll();

@@ -16,7 +16,9 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
     private const float RightPanelExtraHeight = 45f;
     private const float LabelToValueGap = 5f;
     private const float CheckInterval = 0.25f;
+    private readonly Dictionary<WeaponMount, bool> _laserMountCache = new();
     private readonly Dictionary<WeaponSelector, Overlay> _overlays = new();
+    private readonly Dictionary<WeaponMount, int> _podMountCache = new();
     private readonly List<WeaponSelector> _toRemove = [];
     private float _appliedInfoHeight;
     private float _appliedRightHeight;
@@ -42,6 +44,8 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
         SetInfoRowExtraHeight(0f);
         SetRightPanelExtraHeight(0f);
         _overlays.Clear();
+        _laserMountCache.Clear();
+        _podMountCache.Clear();
     }
     
     public void Initialise(AircraftSelectionMenu menu)
@@ -60,16 +64,23 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
         if (_loadoutRoot == null)
             _loadoutRoot = _menu.transform.Find("LowRow/BottomPanel/LoadoutSelector") as RectTransform;
         
-        UpdateHardpointOverlays();
+        var selectors = _loadoutRoot != null
+            ? _loadoutRoot.GetComponentsInChildren<WeaponSelector>(true)
+            : Array.Empty<WeaponSelector>();
+        var laser = Plugin.ShowHardpointInfo.Value && (Plugin.ShowLaseTargets.Value || Plugin.ShowLaseRanges.Value)
+            ? LaserTargetInfo.GetSnapshot(_menu.previewAircraft, selectors, _podMountCache)
+            : LaserTargetInfo.Snapshot.Empty;
+        UpdateHardpointOverlays(laser, selectors);
         UpdateEmptyRcsRow();
     }
     
     private static bool AnyStatTurnedOn() => Plugin.ShowEmptyCost.Value || Plugin.ShowEmptyMass.Value ||
                                              Plugin.ShowMass.Value || Plugin.ShowDrag.Value ||
                                              Plugin.ShowEmptyDrag.Value || Plugin.ShowRcs.Value ||
-                                             Plugin.ShowEmptyRcs.Value;
+                                             Plugin.ShowEmptyRcs.Value || Plugin.ShowLaseTargets.Value ||
+                                             Plugin.ShowLaseRanges.Value;
     
-    private void UpdateHardpointOverlays()
+    private void UpdateHardpointOverlays(LaserTargetInfo.Snapshot laser, WeaponSelector[] selectors)
     {
         if (!Plugin.ShowHardpointInfo.Value || !AnyStatTurnedOn() || _loadoutRoot == null)
         {
@@ -79,9 +90,7 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
             return;
         }
         
-        var selectors = _loadoutRoot.GetComponentsInChildren<WeaponSelector>(true);
         var existing = new HashSet<WeaponSelector>(selectors);
-        
         foreach (var selector in selectors)
         {
             if (selector == null)
@@ -96,7 +105,7 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
                 _overlays[selector] = overlay;
             }
             
-            BuildRows(selector, out var labels, out var values, out var count);
+            BuildRows(selector, laser, out var labels, out var values, out var count);
             overlay.Root.SetActive(count != 0);
             if (count == 0)
                 continue;
@@ -117,7 +126,9 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
                 overlay.Values.rectTransform.sizeDelta = new Vector2(valueWidth, -4f);
                 overlay.Labels.rectTransform.offsetMax = new Vector2(-valueWidth - LabelToValueGap - 4f, -2f);
             }
-            var contentHeight = Mathf.Max(overlay.Labels.GetPreferredValues(labels).y, overlay.Values.GetPreferredValues(values).y);
+            
+            var contentHeight = Mathf.Max(overlay.Labels.GetPreferredValues(labels).y,
+                overlay.Values.GetPreferredValues(values).y);
             var height = Mathf.Ceil(contentHeight + OverlayPadding);
             if (Mathf.Abs(overlay.Rect.sizeDelta.y - height) > 0.5f)
                 overlay.Rect.sizeDelta = new Vector2(-4f, height);
@@ -222,7 +233,8 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
         text.rectTransform.localScale = Vector3.one;
     }
     
-    private static void BuildRows(WeaponSelector selector, out string labels, out string values, out int count)
+    private void BuildRows(WeaponSelector selector, LaserTargetInfo.Snapshot laser, out string labels,
+        out string values, out int count)
     {
         labels = values = string.Empty;
         count = 0;
@@ -306,12 +318,28 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
                 ref count);
         }
         
+        if ((Plugin.ShowLaseTargets.Value || Plugin.ShowLaseRanges.Value) && mount != null &&
+            IsLaserRelevantMount(mount))
+        {
+            if (Plugin.ShowLaseTargets.Value)
+                AppendRow(labelBuilder, valueBuilder, "Lase targets", laser.TotalTargets.ToString(),
+                    laser.TotalTargets, ref count, true);
+            
+            if (Plugin.ShowLaseRanges.Value)
+                for (var i = 0; i < laser.Ranges.Count; i++)
+                {
+                    var range = laser.Ranges[i];
+                    AppendRow(labelBuilder, valueBuilder, i == 0 ? "Lase range" : "", range.Format(), range.Targets,
+                        ref count, true);
+                }
+        }
+        
         labels = labelBuilder.ToString();
         values = valueBuilder.ToString();
     }
     
-    private static bool AppendRow(StringBuilder labelBuilder, StringBuilder valueBuilder,
-        string name, string formatted, float numeric, ref int count, bool skipEmptyConfigCheck = false)
+    private static bool AppendRow(StringBuilder labelBuilder, StringBuilder valueBuilder, string name, string formatted,
+        float numeric, ref int count, bool skipEmptyConfigCheck = false)
     {
         if (Plugin.HideZeroValues.Value && !skipEmptyConfigCheck && Mathf.Abs(numeric) < 0.0000001f)
             return false;
@@ -416,7 +444,9 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
         
         foreach (Transform child in _infoRect)
         {
-            if (child.gameObject == _emptyRcsRow || child is not RectTransform candidate || candidate.GetComponent<TextMeshProUGUI>() == null || !candidate.gameObject.activeSelf || candidate.anchorMin.y < 0.9f || candidate.anchorMax.y < 0.9f)
+            if (child.gameObject == _emptyRcsRow || child is not RectTransform candidate ||
+                candidate.GetComponent<TextMeshProUGUI>() == null || !candidate.gameObject.activeSelf ||
+                candidate.anchorMin.y < 0.9f || candidate.anchorMax.y < 0.9f)
                 continue;
             
             lowestBottom = Mathf.Min(lowestBottom,
@@ -442,7 +472,6 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
     
     private float CalculateRequiredInfoExtraHeight()
     {
-
         if (_emptyRcsRow == null || _emptyRcsRow.transform is not RectTransform row)
             return 0f;
         
@@ -477,6 +506,17 @@ public sealed class SelectionInfoBehaviour : MonoBehaviour
         _appliedInfoHeight = desired;
         if (_infoRect.parent is RectTransform parent)
             LayoutRebuilder.MarkLayoutForRebuild(parent);
+    }
+    
+    private bool IsLaserRelevantMount(WeaponMount mount)
+    {
+        if (!_laserMountCache.TryGetValue(mount, out var result))
+        {
+            result = LaserTargetInfo.IsRelevantMount(mount);
+            _laserMountCache[mount] = result;
+        }
+        
+        return result;
     }
     
     private sealed class Overlay

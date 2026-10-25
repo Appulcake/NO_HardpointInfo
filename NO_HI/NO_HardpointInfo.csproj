@@ -10,7 +10,7 @@
         <PackageId>Apul.NO_HardpointInfo</PackageId>
         <Title>NO_HardpointInfo</Title>
         <Description>A mod to add more (configurable) hardpoint info in loadout menu to Nuclear Option.</Description>
-        <Version>0.34.2.2</Version>
+        <Version>0.34.2.3</Version>
         <Authors>Appulcake</Authors>
         <PackageTags>nuclear;option;bepinex</PackageTags>
 
@@ -18,7 +18,7 @@
         <PackageProjectUrl>https://github.com/Appulcake/NO_HardpointInfo</PackageProjectUrl>
         <RepositoryUrl>https://github.com/Appulcake/NO_HardpointInfo</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        
+
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
@@ -60,8 +60,5 @@
 
         <Message Text="Copying build output assemblies from $(OutDir)*.dll to $(ModDestination)\$(AssemblyName)-$(Configuration)" Importance="high"/>
         <Copy SourceFiles="@(DllFiles)" DestinationFolder="$(ModDestination)\$(AssemblyName)"/>
-
-        <Message Text="Copying build output assemblies from $(OutDir)*.dll to Y:\NOServers\ApulTest1\BepInEx\plugins\$(AssemblyName)" Importance="high"/>
-        <Copy SourceFiles="@(DllFiles)" DestinationFolder="Y:\NOServer\servers\ApulTest1\BepInEx\plugins\$(AssemblyName)"/>
     </Target>
 </Project>
